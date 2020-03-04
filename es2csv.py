@@ -4,8 +4,10 @@ import json
 import codecs
 import elasticsearch
 import progressbar
+import boto3
 from backports import csv
 from functools import wraps
+from requests_aws4auth import AWS4Auth
 
 
 FLUSH_BUFFER = 1000  # Chunk of docs to flush in temp file
@@ -56,9 +58,13 @@ class Es2csv:
 
     @retry(elasticsearch.exceptions.ConnectionError, tries=TIMES_TO_TRY)
     def create_connection(self):
-        es = elasticsearch.Elasticsearch(self.opts.url, timeout=CONNECTION_TIMEOUT, http_auth=self.opts.auth,
+        service = 'es'
+        credentials = boto3.Session(aws_access_key_id=self.opts.aws_access_key, aws_secret_access_key=self.aws_secret_key).get_credentials()
+        awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, self.opts.aws_region, 'es', session_token=credentials.token)
+        es = elasticsearch.Elasticsearch(self.opts.url, timeout=CONNECTION_TIMEOUT, http_auth=awsauth,
                                          verify_certs=self.opts.verify_certs, ca_certs=self.opts.ca_certs,
-                                         client_cert=self.opts.client_cert, client_key=self.opts.client_key)
+                                         client_cert=self.opts.client_cert, client_key=self.opts.client_key,
+                                         connection_class=elasticsearch.RequestsHttpConnection)
         es.cluster.health()
         self.es_conn = es
 
